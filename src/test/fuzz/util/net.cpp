@@ -383,7 +383,7 @@ bool FuzzedSock::Wait(std::chrono::milliseconds timeout, Event requested, Event*
         return false;
     }
     if (occurred != nullptr) {
-        // We simulate the requested event as occured when ConsumeBool()
+        // We simulate the requested event as occurred when ConsumeBool()
         // returns false. This avoids simulating endless waiting if the
         // FuzzedDataProvider runs out of data.
         *occurred = m_fuzzed_data_provider.ConsumeBool() ? 0 : requested;
@@ -395,7 +395,7 @@ bool FuzzedSock::WaitMany(std::chrono::milliseconds timeout, EventsPerSock& even
 {
     for (auto& [sock, events] : events_per_sock) {
         (void)sock;
-        // We simulate the requested event as occured when ConsumeBool()
+        // We simulate the requested event as occurred when ConsumeBool()
         // returns false. This avoids simulating endless waiting if the
         // FuzzedDataProvider runs out of data.
         events.occurred = m_fuzzed_data_provider.ConsumeBool() ? 0 : events.requested;
@@ -414,10 +414,10 @@ bool FuzzedSock::IsConnected(std::string& errmsg) const
 
 void FillNode(FuzzedDataProvider& fuzzed_data_provider, ConnmanTestMsg& connman, CNode& node) noexcept
 {
-    connman.Handshake(node,
-                      /*successfully_connected=*/fuzzed_data_provider.ConsumeBool(),
-                      /*remote_services=*/ConsumeWeakEnum(fuzzed_data_provider, ALL_SERVICE_FLAGS),
-                      /*local_services=*/ConsumeWeakEnum(fuzzed_data_provider, ALL_SERVICE_FLAGS),
-                      /*version=*/fuzzed_data_provider.ConsumeIntegralInRange<int32_t>(MIN_PEER_PROTO_VERSION, std::numeric_limits<int32_t>::max()),
-                      /*relay_txs=*/fuzzed_data_provider.ConsumeBool());
+    auto successfully_connected = fuzzed_data_provider.ConsumeBool();
+    auto remote_services = ConsumeWeakEnum(fuzzed_data_provider, ALL_SERVICE_FLAGS);
+    auto local_services = ConsumeWeakEnum(fuzzed_data_provider, ALL_SERVICE_FLAGS);
+    auto version = fuzzed_data_provider.ConsumeIntegralInRange<int32_t>(MIN_PEER_PROTO_VERSION, std::numeric_limits<int32_t>::max());
+    auto relay_txs = fuzzed_data_provider.ConsumeBool();
+    connman.Handshake(node, successfully_connected, remote_services, local_services, version, relay_txs);
 }

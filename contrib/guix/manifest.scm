@@ -1,5 +1,4 @@
 (use-modules (gnu packages)
-             (gnu packages autotools)
              ((gnu packages bash) #:select (bash-minimal))
              (gnu packages bison)
              ((gnu packages certs) #:select (nss-certs))
@@ -22,9 +21,9 @@
              ((gnu packages tls) #:select (openssl))
              ((gnu packages version-control) #:select (git-minimal))
              (guix build-system cmake)
-             (guix build-system gnu)
              (guix build-system python)
              (guix build-system trivial)
+             (guix download)
              (guix gexp)
              (guix git-download)
              ((guix licenses) #:prefix license:)
@@ -91,7 +90,8 @@ chain for " target " development."))
       (home-page (package-home-page xgcc))
       (license (package-license xgcc)))))
 
-(define base-gcc gcc-12)
+(define base-gcc gcc-12) ;; 12.4.0
+
 (define base-linux-kernel-headers linux-libre-headers-6.1)
 
 (define* (make-bitcoin-cross-toolchain target
@@ -116,10 +116,17 @@ desirable for building Bitcoin Core release binaries."
   (package-with-extra-patches binutils
     (search-our-patches "binutils-unaligned-default.patch")))
 
+(define (winpthreads-patches mingw-w64-x86_64-winpthreads)
+  (package-with-extra-patches mingw-w64-x86_64-winpthreads
+    (search-our-patches "winpthreads-remap-guix-store.patch")))
+
 (define (make-mingw-pthreads-cross-toolchain target)
   "Create a cross-compilation toolchain package for TARGET"
   (let* ((xbinutils (binutils-mingw-patches (cross-binutils target)))
-         (pthreads-xlibc mingw-w64-x86_64-winpthreads)
+         (machine (substring target 0 (string-index target #\-)))
+         (pthreads-xlibc (winpthreads-patches (make-mingw-w64 machine
+                                         #:xgcc (cross-gcc target #:xgcc (gcc-mingw-patches base-gcc))
+                                         #:with-winpthreads? #t)))
          (pthreads-xgcc (cross-gcc target
                                     #:xgcc (gcc-mingw-patches mingw-w64-base-gcc)
                                     #:xbinutils xbinutils
@@ -427,6 +434,7 @@ inspecting signatures in Mach-O binaries.")
                   "--enable-default-ssp=yes",
                   "--enable-default-pie=yes",
                   "--enable-standard-branch-protection=yes",
+                  "--enable-cet=yes",
                   building-on)))
         ((#:phases phases)
           `(modify-phases ,phases
@@ -461,6 +469,7 @@ inspecting signatures in Mach-O binaries.")
           `(append ,flags
             ;; https://www.gnu.org/software/libc/manual/html_node/Configuring-and-compiling.html
             (list "--enable-stack-protector=all",
+                  "--enable-cet",
                   "--enable-bind-now",
                   "--disable-werror",
                   building-on)))
@@ -500,13 +509,10 @@ inspecting signatures in Mach-O binaries.")
         gzip
         xz
         ;; Build tools
+        gcc-toolchain-12
         cmake-minimal
         gnu-make
-        libtool
-        autoconf-2.71
-        automake
         pkg-config
-        bison
         ;; Scripting
         python-minimal ;; (3.10)
         ;; Git
@@ -515,22 +521,17 @@ inspecting signatures in Mach-O binaries.")
         python-lief)
   (let ((target (getenv "HOST")))
     (cond ((string-suffix? "-mingw32" target)
-           (list ;; Native GCC 12 toolchain
-                 gcc-toolchain-12
-                 zip
+           (list zip
                  (make-mingw-pthreads-cross-toolchain "x86_64-w64-mingw32")
                  nsis-x86_64
                  nss-certs
                  osslsigncode))
           ((string-contains target "-linux-")
-           (list ;; Native GCC 12 toolchain
-                 gcc-toolchain-12
+           (list bison
                  (list gcc-toolchain-12 "static")
                  (make-bitcoin-cross-toolchain target)))
           ((string-contains target "darwin")
-           (list ;; Native GCC 11 toolchain
-                 gcc-toolchain-11
-                 clang-toolchain-18
+           (list clang-toolchain-18
                  lld-18
                  (make-lld-wrapper lld-18 #:lld-as-ld? #t)
                  python-signapple

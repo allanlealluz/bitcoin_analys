@@ -1303,7 +1303,7 @@ public:
         // Serialize the nSequence
         if (nInput != nIn && (fHashSingle || fHashNone))
             // let the others update at will
-            ::Serialize(s, int{0});
+            ::Serialize(s, int32_t{0});
         else
             ::Serialize(s, txTo.vin[nInput].nSequence);
     }
@@ -1565,7 +1565,7 @@ bool SignatureHashSchnorr(uint256& hash_out, ScriptExecutionData& execdata, cons
 }
 
 template <class T>
-uint256 SignatureHash(const CScript& scriptCode, const T& txTo, unsigned int nIn, int nHashType, const CAmount& amount, SigVersion sigversion, const PrecomputedTransactionData* cache)
+uint256 SignatureHash(const CScript& scriptCode, const T& txTo, unsigned int nIn, int32_t nHashType, const CAmount& amount, SigVersion sigversion, const PrecomputedTransactionData* cache)
 {
     assert(nIn < txTo.vin.size());
 
@@ -1943,6 +1943,8 @@ static bool VerifyWitnessProgram(const CScriptWitness& witness, int witversion, 
             }
             return set_success(serror);
         }
+    } else if (!is_p2sh && CScript::IsPayToAnchor(witversion, program)) {
+        return true;
     } else {
         if (flags & SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM) {
             return set_error(serror, SCRIPT_ERR_DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM);

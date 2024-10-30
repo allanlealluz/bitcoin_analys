@@ -49,7 +49,7 @@ static std::vector<const char*> g_args;
 static void SetArgs(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         // Only take into account arguments that start with `--`. The others are for the fuzz engine:
-        // `fuzz -runs=1 fuzz_seed_corpus/address_deserialize_v2 --checkaddrman=5`
+        // `fuzz -runs=1 fuzz_corpora/address_deserialize_v2 --checkaddrman=5`
         if (strlen(argv[i]) > 2 && argv[i][0] == '-' && argv[i][1] == '-') {
             g_args.push_back(argv[i]);
         }
@@ -102,11 +102,13 @@ void ResetCoverageCounters() {}
 
 void initialize()
 {
+    g_fuzzing = true;
+
     // By default, make the RNG deterministic with a fixed seed. This will affect all
     // randomness during the fuzz test, except:
     // - GetStrongRandBytes(), which is used for the creation of private key material.
     // - Creating a BasicTestingSetup or derived class will switch to a random seed.
-    SeedRandomForTest(SeedRand::ZEROS);
+    SeedRandomStateForTest(SeedRand::ZEROS);
 
     // Terminate immediately if a fuzzing harness ever tries to create a socket.
     // Individual tests can override this by pointing CreateSock to a mocked alternative.

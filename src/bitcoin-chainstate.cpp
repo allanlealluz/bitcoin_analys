@@ -19,6 +19,7 @@
 
 #include <consensus/validation.h>
 #include <core_io.h>
+#include <logging.h>
 #include <node/blockstorage.h>
 #include <node/caches.h>
 #include <node/chainstate.h>
@@ -41,6 +42,12 @@
 
 int main(int argc, char* argv[])
 {
+    // We do not enable logging for this app, so explicitly disable it.
+    // To enable logging instead, replace with:
+    //    LogInstance().m_print_to_console = true;
+    //    LogInstance().StartLogging();
+    LogInstance().DisableLogging();
+
     // SETUP: Argument parsing and handling
     if (argc != 2) {
         std::cerr
@@ -276,8 +283,6 @@ int main(int argc, char* argv[])
 epilogue:
     // Without this precise shutdown sequence, there will be a lot of nullptr
     // dereferencing and UB.
-    if (chainman.m_thread_load.joinable()) chainman.m_thread_load.join();
-
     validation_signals.FlushBackgroundCallbacks();
     {
         LOCK(cs_main);

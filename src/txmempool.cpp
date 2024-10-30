@@ -15,7 +15,6 @@
 #include <policy/policy.h>
 #include <policy/settings.h>
 #include <random.h>
-#include <reverse_iterator.h>
 #include <tinyformat.h>
 #include <util/check.h>
 #include <util/feefrac.h>
@@ -31,6 +30,7 @@
 #include <cmath>
 #include <numeric>
 #include <optional>
+#include <ranges>
 #include <string_view>
 #include <utility>
 
@@ -121,7 +121,7 @@ void CTxMemPool::UpdateTransactionsFromBlock(const std::vector<uint256>& vHashes
     // This maximizes the benefit of the descendant cache and guarantees that
     // CTxMemPoolEntry::m_children will be updated, an assumption made in
     // UpdateForDescendants.
-    for (const uint256 &hash : reverse_iterate(vHashesToUpdate)) {
+    for (const uint256& hash : vHashesToUpdate | std::views::reverse) {
         // calculate children from mapNextTx
         txiter it = mapTx.find(hash);
         if (it == mapTx.end()) {
@@ -661,7 +661,7 @@ void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendhei
 
     AssertLockHeld(::cs_main);
     LOCK(cs);
-    LogPrint(BCLog::MEMPOOL, "Checking mempool with %u transactions and %u inputs\n", (unsigned int)mapTx.size(), (unsigned int)mapNextTx.size());
+    LogDebug(BCLog::MEMPOOL, "Checking mempool with %u transactions and %u inputs\n", (unsigned int)mapTx.size(), (unsigned int)mapNextTx.size());
 
     uint64_t checkTotal = 0;
     CAmount check_total_fee{0};
@@ -988,12 +988,12 @@ bool CTxMemPool::HasNoInputsOf(const CTransaction &tx) const
 
 CCoinsViewMemPool::CCoinsViewMemPool(CCoinsView* baseIn, const CTxMemPool& mempoolIn) : CCoinsViewBacked(baseIn), mempool(mempoolIn) { }
 
-bool CCoinsViewMemPool::GetCoin(const COutPoint &outpoint, Coin &coin) const {
+std::optional<Coin> CCoinsViewMemPool::GetCoin(const COutPoint& outpoint) const
+{
     // Check to see if the inputs are made available by another tx in the package.
     // These Coins would not be available in the underlying CoinsView.
     if (auto it = m_temp_added.find(outpoint); it != m_temp_added.end()) {
-        coin = it->second;
-        return true;
+        return it->second;
     }
 
     // If an entry in the mempool exists, always return that one, as it's guaranteed to never
@@ -1002,14 +1002,13 @@ bool CCoinsViewMemPool::GetCoin(const COutPoint &outpoint, Coin &coin) const {
     CTransactionRef ptx = mempool.get(outpoint.hash);
     if (ptx) {
         if (outpoint.n < ptx->vout.size()) {
-            coin = Coin(ptx->vout[outpoint.n], MEMPOOL_HEIGHT, false);
+            Coin coin(ptx->vout[outpoint.n], MEMPOOL_HEIGHT, false);
             m_non_base_coins.emplace(outpoint);
-            return true;
-        } else {
-            return false;
+            return coin;
         }
+        return std::nullopt;
     }
-    return base->GetCoin(outpoint, coin);
+    return base->GetCoin(outpoint);
 }
 
 void CCoinsViewMemPool::PackageAddTransaction(const CTransactionRef& tx)
@@ -1036,7 +1035,7 @@ void CTxMemPool::RemoveUnbroadcastTx(const uint256& txid, const bool unchecked) 
 
     if (m_unbroadcast_txids.erase(txid))
     {
-        LogPrint(BCLog::MEMPOOL, "Removed %i from set of unbroadcast txns%s\n", txid.GetHex(), (unchecked ? " before confirmation that txn was sent out" : ""));
+        LogDebug(BCLog::MEMPOOL, "Removed %i from set of unbroadcast txns%s\n", txid.GetHex(), (unchecked ? " before confirmation that txn was sent out" : ""));
     }
 }
 
@@ -1164,7 +1163,7 @@ void CTxMemPool::TrimToSize(size_t sizelimit, std::vector<COutPoint>* pvNoSpends
     }
 
     if (maxFeeRateRemoved > CFeeRate(0)) {
-        LogPrint(BCLog::MEMPOOL, "Removed %u txn, rolling minimum fee bumped to %s\n", nTxnRemoved, maxFeeRateRemoved.ToString());
+        LogDebug(BCLog::MEMPOOL, "Removed %u txn, rolling minimum fee bumped to %s\n", nTxnRemoved, maxFeeRateRemoved.ToString());
     }
 }
 

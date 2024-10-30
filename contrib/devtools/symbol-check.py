@@ -235,7 +235,7 @@ def check_MACHO_libraries(binary) -> bool:
     return ok
 
 def check_MACHO_min_os(binary) -> bool:
-    if binary.build_version.minos == [11,0,0]:
+    if binary.build_version.minos == [13,0,0]:
         return True
     return False
 
@@ -245,7 +245,7 @@ def check_MACHO_sdk(binary) -> bool:
     return False
 
 def check_MACHO_lld(binary) -> bool:
-    if binary.build_version.tools[0].version == [18, 1, 6]:
+    if binary.build_version.tools[0].version == [18, 1, 8]:
         return True
     return False
 
@@ -299,22 +299,14 @@ lief.EXE_FORMATS.PE: [
 if __name__ == '__main__':
     retval: int = 0
     for filename in sys.argv[1:]:
-        try:
-            binary = lief.parse(filename)
-            etype = binary.format
-            if etype == lief.EXE_FORMATS.UNKNOWN:
-                print(f'{filename}: unknown executable format')
-                retval = 1
-                continue
+        binary = lief.parse(filename)
+        etype = binary.format
 
-            failed: list[str] = []
-            for (name, func) in CHECKS[etype]:
-                if not func(binary):
-                    failed.append(name)
-            if failed:
-                print(f'{filename}: failed {" ".join(failed)}')
-                retval = 1
-        except IOError:
-            print(f'{filename}: cannot open')
+        failed: list[str] = []
+        for (name, func) in CHECKS[etype]:
+            if not func(binary):
+                failed.append(name)
+        if failed:
+            print(f'{filename}: failed {" ".join(failed)}')
             retval = 1
     sys.exit(retval)

@@ -3,7 +3,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <config/bitcoin-config.h> // IWYU pragma: keep
+#include <bitcoin-build-config.h> // IWYU pragma: keep
 
 #include <chainparamsbase.h>
 #include <clientversion.h>
@@ -75,6 +75,7 @@ static void SetupCliArgs(ArgsManager& argsman)
 
     const auto defaultBaseParams = CreateBaseChainParams(ChainType::MAIN);
     const auto testnetBaseParams = CreateBaseChainParams(ChainType::TESTNET);
+    const auto testnet4BaseParams = CreateBaseChainParams(ChainType::TESTNET4);
     const auto signetBaseParams = CreateBaseChainParams(ChainType::SIGNET);
     const auto regtestBaseParams = CreateBaseChainParams(ChainType::REGTEST);
 
@@ -86,10 +87,10 @@ static void SetupCliArgs(ArgsManager& argsman)
                              "arguments are number of blocks to generate (default: %s) and maximum iterations to try (default: %s), equivalent to "
                              "RPC generatetoaddress nblocks and maxtries arguments. Example: bitcoin-cli -generate 4 1000",
                              DEFAULT_NBLOCKS, DEFAULT_MAX_TRIES),
-                   ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-    argsman.AddArg("-addrinfo", "Get the number of addresses known to the node, per network and total, after filtering for quality and recency. The total number of addresses known to the node may be higher.", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-    argsman.AddArg("-getinfo", "Get general information from the remote server. Note that unlike server-side RPC calls, the output of -getinfo is the result of multiple non-atomic requests. Some entries in the output may represent results from different states (e.g. wallet balance may be as of a different block from the chain state reported)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-    argsman.AddArg("-netinfo", "Get network peer connection information from the remote server. An optional integer argument from 0 to 4 can be passed for different peers listings (default: 0). Pass \"help\" for detailed help documentation.", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+                   ArgsManager::ALLOW_ANY, OptionsCategory::CLI_COMMANDS);
+    argsman.AddArg("-addrinfo", "Get the number of addresses known to the node, per network and total, after filtering for quality and recency. The total number of addresses known to the node may be higher.", ArgsManager::ALLOW_ANY, OptionsCategory::CLI_COMMANDS);
+    argsman.AddArg("-getinfo", "Get general information from the remote server. Note that unlike server-side RPC calls, the output of -getinfo is the result of multiple non-atomic requests. Some entries in the output may represent results from different states (e.g. wallet balance may be as of a different block from the chain state reported)", ArgsManager::ALLOW_ANY, OptionsCategory::CLI_COMMANDS);
+    argsman.AddArg("-netinfo", "Get network peer connection information from the remote server. An optional integer argument from 0 to 4 can be passed for different peers listings (default: 0). Pass \"help\" for detailed help documentation.", ArgsManager::ALLOW_ANY, OptionsCategory::CLI_COMMANDS);
 
     SetupChainParamsBaseOptions(argsman);
     argsman.AddArg("-color=<when>", strprintf("Color setting for CLI output (default: %s). Valid values: always, auto (add color codes when standard output is connected to a terminal and OS is not WIN32), never.", DEFAULT_COLOR_SETTING), ArgsManager::ALLOW_ANY | ArgsManager::DISALLOW_NEGATION, OptionsCategory::OPTIONS);
@@ -98,7 +99,7 @@ static void SetupCliArgs(ArgsManager& argsman)
     argsman.AddArg("-rpcconnect=<ip>", strprintf("Send commands to node running on <ip> (default: %s)", DEFAULT_RPCCONNECT), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-rpccookiefile=<loc>", "Location of the auth cookie. Relative paths will be prefixed by a net-specific datadir location. (default: data dir)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-rpcpassword=<pw>", "Password for JSON-RPC connections", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
-    argsman.AddArg("-rpcport=<port>", strprintf("Connect to JSON-RPC on <port> (default: %u, testnet: %u, signet: %u, regtest: %u)", defaultBaseParams->RPCPort(), testnetBaseParams->RPCPort(), signetBaseParams->RPCPort(), regtestBaseParams->RPCPort()), ArgsManager::ALLOW_ANY | ArgsManager::NETWORK_ONLY, OptionsCategory::OPTIONS);
+    argsman.AddArg("-rpcport=<port>", strprintf("Connect to JSON-RPC on <port> (default: %u, testnet: %u, testnet4: %u, signet: %u, regtest: %u)", defaultBaseParams->RPCPort(), testnetBaseParams->RPCPort(), testnet4BaseParams->RPCPort(), signetBaseParams->RPCPort(), regtestBaseParams->RPCPort()), ArgsManager::ALLOW_ANY | ArgsManager::NETWORK_ONLY, OptionsCategory::OPTIONS);
     argsman.AddArg("-rpcuser=<user>", "Username for JSON-RPC connections", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-rpcwait", "Wait for RPC server to start", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-rpcwaittimeout=<n>", strprintf("Timeout in seconds to wait for the RPC server to start, or 0 for no timeout. (default: %d)", DEFAULT_WAIT_CLIENT_TIMEOUT), ArgsManager::ALLOW_ANY | ArgsManager::DISALLOW_NEGATION, OptionsCategory::OPTIONS);
@@ -144,14 +145,14 @@ static int AppInitRPC(int argc, char* argv[])
         return EXIT_FAILURE;
     }
     if (argc < 2 || HelpRequested(gArgs) || gArgs.IsArgSet("-version")) {
-        std::string strUsage = PACKAGE_NAME " RPC client version " + FormatFullVersion() + "\n";
+        std::string strUsage = CLIENT_NAME " RPC client version " + FormatFullVersion() + "\n";
 
         if (gArgs.IsArgSet("-version")) {
             strUsage += FormatParagraph(LicenseInfo());
         } else {
             strUsage += "\n"
-                "Usage:  bitcoin-cli [options] <command> [params]  Send command to " PACKAGE_NAME "\n"
-                "or:     bitcoin-cli [options] -named <command> [name=value]...  Send command to " PACKAGE_NAME " (with named arguments)\n"
+                "Usage:  bitcoin-cli [options] <command> [params]  Send command to " CLIENT_NAME "\n"
+                "or:     bitcoin-cli [options] -named <command> [name=value]...  Send command to " CLIENT_NAME " (with named arguments)\n"
                 "or:     bitcoin-cli [options] help                List commands\n"
                 "or:     bitcoin-cli [options] help <command>      Get help for a command\n";
             strUsage += "\n" + gArgs.GetHelpMessage();
@@ -428,6 +429,8 @@ private:
     std::string ChainToString() const
     {
         switch (gArgs.GetChainType()) {
+        case ChainType::TESTNET4:
+            return " testnet4";
         case ChainType::TESTNET:
             return " testnet";
         case ChainType::SIGNET:
@@ -532,7 +535,7 @@ public:
         }
 
         // Generate report header.
-        std::string result{strprintf("%s client %s%s - server %i%s\n\n", PACKAGE_NAME, FormatFullVersion(), ChainToString(), networkinfo["protocolversion"].getInt<int>(), networkinfo["subversion"].get_str())};
+        std::string result{strprintf("%s client %s%s - server %i%s\n\n", CLIENT_NAME, FormatFullVersion(), ChainToString(), networkinfo["protocolversion"].getInt<int>(), networkinfo["subversion"].get_str())};
 
         // Report detailed peer connections list sorted by direction and minimum ping time.
         if (DetailsRequested() && !m_peers.empty()) {
@@ -675,7 +678,7 @@ public:
         "           \".\" - we do not relay addresses to this peer (addr_relay_enabled is false)\n"
         "  addrl    Total number of addresses dropped due to rate limiting\n"
         "  age      Duration of connection to the peer, in minutes\n"
-        "  asmap    Mapped AS (Autonomous System) number in the BGP route to the peer, used for diversifying\n"
+        "  asmap    Mapped AS (Autonomous System) number at the end of the BGP route to the peer, used for diversifying\n"
         "           peer selection (only displayed if the -asmap config option is set)\n"
         "  id       Peer index, in increasing order of peer connections since node startup\n"
         "  address  IP address and port of the peer\n"
@@ -947,7 +950,8 @@ static void ParseError(const UniValue& error, std::string& strPrint, int& nRet)
             strPrint += ("error message:\n" + err_msg.get_str());
         }
         if (err_code.isNum() && err_code.getInt<int>() == RPC_WALLET_NOT_SPECIFIED) {
-            strPrint += "\nTry adding \"-rpcwallet=<filename>\" option to bitcoin-cli command line.";
+            strPrint += " Or for the CLI, specify the \"-rpcwallet=<walletname>\" option before the command";
+            strPrint += " (run \"bitcoin-cli -h\" for help or \"bitcoin-cli listwallets\" to see which wallets are currently loaded).";
         }
     } else {
         strPrint = "error: " + error.write();
@@ -1209,6 +1213,7 @@ static int CommandLineRPC(int argc, char *argv[])
                 fputc('\n', stdout);
             }
         }
+        gArgs.CheckMultipleCLIArgs();
         std::unique_ptr<BaseRequestHandler> rh;
         std::string method;
         if (gArgs.IsArgSet("-getinfo")) {

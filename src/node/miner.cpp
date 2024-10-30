@@ -33,6 +33,14 @@ int64_t UpdateTime(CBlockHeader* pblock, const Consensus::Params& consensusParam
     int64_t nOldTime = pblock->nTime;
     int64_t nNewTime{std::max<int64_t>(pindexPrev->GetMedianTimePast() + 1, TicksSinceEpoch<std::chrono::seconds>(NodeClock::now()))};
 
+    if (consensusParams.enforce_BIP94) {
+        // Height of block to be mined.
+        const int height{pindexPrev->nHeight + 1};
+        if (height % consensusParams.DifficultyAdjustmentInterval() == 0) {
+            nNewTime = std::max<int64_t>(nNewTime, pindexPrev->GetBlockTime() - MAX_TIMEWARP);
+        }
+    }
+
     if (nOldTime < nNewTime) {
         pblock->nTime = nNewTime;
     }
@@ -59,14 +67,17 @@ void RegenerateCommitments(CBlock& block, ChainstateManager& chainman)
 
 static BlockAssembler::Options ClampOptions(BlockAssembler::Options options)
 {
-    // Limit weight to between 4K and DEFAULT_BLOCK_MAX_WEIGHT for sanity:
-    options.nBlockMaxWeight = std::clamp<size_t>(options.nBlockMaxWeight, 4000, DEFAULT_BLOCK_MAX_WEIGHT);
+    Assert(options.coinbase_max_additional_weight <= DEFAULT_BLOCK_MAX_WEIGHT);
+    Assert(options.coinbase_output_max_additional_sigops <= MAX_BLOCK_SIGOPS_COST);
+    // Limit weight to between coinbase_max_additional_weight and DEFAULT_BLOCK_MAX_WEIGHT for sanity:
+    // Coinbase (reserved) outputs can safely exceed -blockmaxweight, but the rest of the block template will be empty.
+    options.nBlockMaxWeight = std::clamp<size_t>(options.nBlockMaxWeight, options.coinbase_max_additional_weight, DEFAULT_BLOCK_MAX_WEIGHT);
     return options;
 }
 
 BlockAssembler::BlockAssembler(Chainstate& chainstate, const CTxMemPool* mempool, const Options& options)
     : chainparams{chainstate.m_chainman.GetParams()},
-      m_mempool{mempool},
+      m_mempool{options.use_mempool ? mempool : nullptr},
       m_chainstate{chainstate},
       m_options{ClampOptions(options)}
 {
@@ -87,8 +98,8 @@ void BlockAssembler::resetBlock()
     inBlock.clear();
 
     // Reserve space for coinbase tx
-    nBlockWeight = 4000;
-    nBlockSigOpsCost = 400;
+    nBlockWeight = m_options.coinbase_max_additional_weight;
+    nBlockSigOpsCost = m_options.coinbase_output_max_additional_sigops;
 
     // These counters do not include coinbase tx
     nBlockTx = 0;
@@ -102,10 +113,6 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
     resetBlock();
 
     pblocktemplate.reset(new CBlockTemplate());
-
-    if (!pblocktemplate.get()) {
-        return nullptr;
-    }
     CBlock* const pblock = &pblocktemplate->block; // pointer for convenience
 
     // Add dummy coinbase tx as first transaction
@@ -168,7 +175,7 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
     }
     const auto time_2{SteadyClock::now()};
 
-    LogPrint(BCLog::BENCH, "CreateNewBlock() packages: %.2fms (%d packages, %d updated descendants), validity: %.2fms (total %.2fms)\n",
+    LogDebug(BCLog::BENCH, "CreateNewBlock() packages: %.2fms (%d packages, %d updated descendants), validity: %.2fms (total %.2fms)\n",
              Ticks<MillisecondsDouble>(time_1 - time_start), nPackagesSelected, nDescendantsUpdated,
              Ticks<MillisecondsDouble>(time_2 - time_1),
              Ticks<MillisecondsDouble>(time_2 - time_start));
@@ -379,7 +386,7 @@ void BlockAssembler::addPackageTxs(const CTxMemPool& mempool, int& nPackagesSele
             ++nConsecutiveFailed;
 
             if (nConsecutiveFailed > MAX_CONSECUTIVE_FAILURES && nBlockWeight >
-                    m_options.nBlockMaxWeight - 4000) {
+                    m_options.nBlockMaxWeight - m_options.coinbase_max_additional_weight) {
                 // Give up if we're close to full and haven't succeeded in a while
                 break;
             }

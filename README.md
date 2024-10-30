@@ -24,9 +24,6 @@ Testing and code review are crucial for the security and stability of Bitcoin Co
 Automated Testing
 Developers are encouraged to write unit tests for new code and submit tests for existing code. To compile and run unit tests, use make check. For more details, see /src/test/README.md.
 
-We also have regression and integration tests written in Python. Run these tests using test/functional/test_runner.py after installing the test dependencies.
-
-Our CI (Continuous Integration) systems build every pull request for Windows, Linux, and macOS, and run unit/sanity tests automatically.
 
 Manual Quality Assurance (QA) Testing
 Code changes should be tested by someone other than the original developer, especially for large or high-risk changes. Including a test plan in the pull request description is helpful for others reviewing your changes.

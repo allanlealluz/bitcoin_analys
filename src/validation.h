@@ -39,9 +39,9 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <span>
 #include <stdint.h>
 #include <string>
-#include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -84,11 +84,6 @@ enum class SynchronizationState {
     INIT_DOWNLOAD,
     POST_INIT
 };
-
-extern GlobalMutex g_best_block_mutex;
-extern std::condition_variable g_best_block_cv;
-/** Used to notify getblocktemplate RPC of new tips. */
-extern uint256 g_best_block;
 
 /** Documentation for argument 'checklevel'. */
 extern const std::vector<std::string> CHECKLEVEL_DOC;
@@ -407,7 +402,7 @@ bool HasValidProofOfWork(const std::vector<CBlockHeader>& headers, const Consens
 bool IsBlockMutated(const CBlock& block, bool check_witness_root);
 
 /** Return the sum of the claimed work on a given set of headers. No verification of PoW is done. */
-arith_uint256 CalculateClaimedHeadersWork(const std::vector<CBlockHeader>& headers);
+arith_uint256 CalculateClaimedHeadersWork(std::span<const CBlockHeader> headers);
 
 enum class VerifyDBResult {
     SUCCESS,
@@ -906,14 +901,19 @@ private:
 
     CBlockIndex* m_best_invalid GUARDED_BY(::cs_main){nullptr};
 
+    /** The last header for which a headerTip notification was issued. */
+    CBlockIndex* m_last_notified_header GUARDED_BY(GetMutex()){nullptr};
+
+    bool NotifyHeaderTip() LOCKS_EXCLUDED(GetMutex());
+
     //! Internal helper for ActivateSnapshot().
     //!
     //! De-serialization of a snapshot that is created with
-    //! CreateUTXOSnapshot() in rpc/blockchain.cpp.
+    //! the dumptxoutset RPC.
     //! To reduce space the serialization format of the snapshot avoids
     //! duplication of tx hashes. The code takes advantage of the guarantee by
     //! leveldb that keys are lexicographically sorted.
-    [[nodiscard]] bool PopulateAndValidateSnapshot(
+    [[nodiscard]] util::Result<void> PopulateAndValidateSnapshot(
         Chainstate& snapshot_chainstate,
         AutoFile& coins_file,
         const node::SnapshotMetadata& metadata);
@@ -949,6 +949,21 @@ private:
     //! A queue for script verifications that have to be performed by worker threads.
     CCheckQueue<CScriptCheck> m_script_check_queue;
 
+    //! Timers and counters used for benchmarking validation in both background
+    //! and active chainstates.
+    SteadyClock::duration GUARDED_BY(::cs_main) time_check{};
+    SteadyClock::duration GUARDED_BY(::cs_main) time_forks{};
+    SteadyClock::duration GUARDED_BY(::cs_main) time_connect{};
+    SteadyClock::duration GUARDED_BY(::cs_main) time_verify{};
+    SteadyClock::duration GUARDED_BY(::cs_main) time_undo{};
+    SteadyClock::duration GUARDED_BY(::cs_main) time_index{};
+    SteadyClock::duration GUARDED_BY(::cs_main) time_total{};
+    int64_t GUARDED_BY(::cs_main) num_blocks_total{0};
+    SteadyClock::duration GUARDED_BY(::cs_main) time_connect_total{};
+    SteadyClock::duration GUARDED_BY(::cs_main) time_flush{};
+    SteadyClock::duration GUARDED_BY(::cs_main) time_chainstate{};
+    SteadyClock::duration GUARDED_BY(::cs_main) time_post_connect{};
+
 public:
     using Options = kernel::ChainstateManagerOpts;
 
@@ -956,7 +971,7 @@ public:
 
     //! Function to restart active indexes; set dynamically to avoid a circular
     //! dependency on `base/index.cpp`.
-    std::function<void()> restart_indexes = std::function<void()>();
+    std::function<void()> snapshot_download_completed = std::function<void()>();
 
     const CChainParams& GetParams() const { return m_options.chainparams; }
     const Consensus::Params& GetConsensus() const { return m_options.chainparams.GetConsensus(); }
@@ -987,7 +1002,6 @@ public:
 
     const util::SignalInterrupt& m_interrupt;
     const Options m_options;
-    std::thread m_thread_load;
     //! A single BlockManager instance is shared across each constructed
     //! chainstate to avoid duplicating block metadata.
     node::BlockManager m_blockman;
@@ -1074,11 +1088,10 @@ public:
     //! - Verify that the hash of the resulting coinsdb matches the expected hash
     //!   per assumeutxo chain parameters.
     //! - Wait for our headers chain to include the base block of the snapshot.
-    //! - "Fast forward" the tip of the new chainstate to the base of the snapshot,
-    //!   faking nTx* block index data along the way.
+    //! - "Fast forward" the tip of the new chainstate to the base of the snapshot.
     //! - Move the new chainstate to `m_snapshot_chainstate` and make it our
     //!   ChainstateActive().
-    [[nodiscard]] util::Result<void> ActivateSnapshot(
+    [[nodiscard]] util::Result<CBlockIndex*> ActivateSnapshot(
         AutoFile& coins_file, const node::SnapshotMetadata& metadata, bool in_memory);
 
     //! Once the background validation chainstate has reached the height which
@@ -1198,12 +1211,12 @@ public:
      * May not be called in a
      * validationinterface callback.
      *
-     * @param[in]  block The block headers themselves
+     * @param[in]  headers The block headers themselves
      * @param[in]  min_pow_checked  True if proof-of-work anti-DoS checks have been done by caller for headers chain
      * @param[out] state This may be set to an Error state if any error occurred processing them
      * @param[out] ppindex If set, the pointer will be set to point to the last new block index object for the given headers
      */
-    bool ProcessNewBlockHeaders(const std::vector<CBlockHeader>& block, bool min_pow_checked, BlockValidationState& state, const CBlockIndex** ppindex = nullptr) LOCKS_EXCLUDED(cs_main);
+    bool ProcessNewBlockHeaders(std::span<const CBlockHeader> headers, bool min_pow_checked, BlockValidationState& state, const CBlockIndex** ppindex = nullptr) LOCKS_EXCLUDED(cs_main);
 
     /**
      * Sufficiently validate a block for disk storage (and store on disk).
